@@ -43,62 +43,137 @@ error() {
     echo -e "${RED}✖ $1${RESET}"
 }
 
-# Update system packages
-step "Updating system packages"
-sudo apt update &>/dev/null && sudo apt upgrade -y &>/dev/null &
-spinner
-success "System updated successfully"
+show_usage() {
+    echo -e "${BOLD}Usage: $0 [COMMAND]${RESET}"
+    echo ""
+    echo "Commands:"
+    echo "  setup   - Install and configure Rust-Mumble (default)"
+    echo "  update  - Update Rust-Mumble to the latest version"
+    echo "  help    - Show this help message"
+    echo ""
+}
 
-# Install dependencies
-step "Installing dependencies"
-sudo apt install -y llvm clang make pkg-config libssl-dev git curl ufw &>/dev/null &
-spinner
-success "Dependencies installed"
+update_rust_mumble() {
+    echo -e "\n${BLUE}${BOLD}=== Updating Rust-Mumble ===${RESET}\n"
 
-# Check if Rust is installed
-step "Checking for Rust installation"
-if ! command -v rustc &>/dev/null; then
-    warning "Rust not found, installing now"
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y &>/dev/null
-    source "$HOME/.cargo/env"
-    success "Rust installed successfully"
-else
-    success "Rust is already installed"
-fi
+    # Check if Rust-Mumble directory exists
+    if [ ! -d "/root/rust-mumble" ]; then
+        error "Rust-Mumble not found at /root/rust-mumble"
+        error "Please run setup first: $0 setup"
+        exit 1
+    fi
 
-# Clone Rust-Mumble
-step "Cloning Rust-Mumble repository"
-if [ ! -d "/root/rust-mumble" ]; then
-    git clone https://github.com/AvarianKnight/rust-mumble.git /root/rust-mumble &>/dev/null &
+    # Stop the service
+    step "Stopping Rust-Mumble service"
+    sudo systemctl stop rust-mumble &>/dev/null &
     spinner
-    success "Rust-Mumble repository cloned"
-else
-    success "Rust-Mumble already exists, skipping"
-fi
+    success "Service stopped"
 
-# Build Rust-Mumble
-cd /root/rust-mumble
-step "Building Rust-Mumble"
-cargo clean &>/dev/null && cargo build --release &>/dev/null &
-spinner
-success "Rust-Mumble built successfully"
-
-# Check for certificates
-step "Checking if certificates exist"
-if [ ! -f "/root/rust-mumble/cert.pem" ] || [ ! -f "/root/rust-mumble/key.pem" ]; then
-    warning "Certificates not found, generating self-signed certificates"
-    openssl req -newkey rsa:2048 -days 365 -nodes -x509 \
-        -keyout /root/rust-mumble/key.pem -out /root/rust-mumble/cert.pem \
-        -subj "/CN=Rust-Mumble" &>/dev/null &
+    # Update the repository
+    cd /root/rust-mumble
+    step "Fetching latest changes from repository"
+    git fetch origin &>/dev/null &
     spinner
-    success "Certificates generated"
-else
-    success "Certificates already exist, skipping"
-fi
+    success "Repository fetched"
 
-# Create systemd service
-step "Creating systemd service"
-cat <<EOF | sudo tee /etc/systemd/system/rust-mumble.service &>/dev/null
+    # Check for updates
+    step "Checking for updates"
+    LOCAL=$(git rev-parse HEAD)
+    REMOTE=$(git rev-parse origin/main)
+
+    if [ "$LOCAL" = "$REMOTE" ]; then
+        success "Rust-Mumble is already up to date"
+        step "Starting Rust-Mumble service"
+        sudo systemctl start rust-mumble &>/dev/null &
+        spinner
+        success "Service started"
+        return 0
+    fi
+
+    # Pull latest changes
+    step "Pulling latest changes"
+    git pull origin main &>/dev/null &
+    spinner
+    success "Latest changes pulled"
+
+    # Rebuild Rust-Mumble
+    step "Rebuilding Rust-Mumble"
+    cargo clean &>/dev/null && cargo build --release &>/dev/null &
+    spinner
+    success "Rust-Mumble rebuilt successfully"
+
+    # Start the service
+    step "Starting Rust-Mumble service"
+    sudo systemctl start rust-mumble &>/dev/null &
+    spinner
+    success "Service started"
+
+    echo -e "\n${GREEN}${BOLD}Rust-Mumble has been updated successfully!${RESET}\n"
+
+    # Display service status
+    step "Checking Rust-Mumble service status"
+    sudo systemctl status rust-mumble --no-pager
+}
+
+setup_rust_mumble() {
+    echo -e "\n${BLUE}${BOLD}=== Setting up Rust-Mumble ===${RESET}\n"
+
+    # Update system packages
+    step "Updating system packages"
+    sudo apt update &>/dev/null && sudo apt upgrade -y &>/dev/null &
+    spinner
+    success "System updated successfully"
+
+    # Install dependencies
+    step "Installing dependencies"
+    sudo apt install -y llvm clang make pkg-config libssl-dev git curl ufw &>/dev/null &
+    spinner
+    success "Dependencies installed"
+
+    # Check if Rust is installed
+    step "Checking for Rust installation"
+    if ! command -v rustc &>/dev/null; then
+        warning "Rust not found, installing now"
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y &>/dev/null
+        source "$HOME/.cargo/env"
+        success "Rust installed successfully"
+    else
+        success "Rust is already installed"
+    fi
+
+    # Clone Rust-Mumble
+    step "Cloning Rust-Mumble repository"
+    if [ ! -d "/root/rust-mumble" ]; then
+        git clone https://github.com/AvarianKnight/rust-mumble.git /root/rust-mumble &>/dev/null &
+        spinner
+        success "Rust-Mumble repository cloned"
+    else
+        success "Rust-Mumble already exists, skipping"
+    fi
+
+    # Build Rust-Mumble
+    cd /root/rust-mumble
+    step "Building Rust-Mumble"
+    cargo clean &>/dev/null && cargo build --release &>/dev/null &
+    spinner
+    success "Rust-Mumble built successfully"
+
+    # Check for certificates
+    step "Checking if certificates exist"
+    if [ ! -f "/root/rust-mumble/cert.pem" ] || [ ! -f "/root/rust-mumble/key.pem" ]; then
+        warning "Certificates not found, generating self-signed certificates"
+        openssl req -newkey rsa:2048 -days 365 -nodes -x509 \
+            -keyout /root/rust-mumble/key.pem -out /root/rust-mumble/cert.pem \
+            -subj "/CN=Rust-Mumble" &>/dev/null &
+        spinner
+        success "Certificates generated"
+    else
+        success "Certificates already exist, skipping"
+    fi
+
+    # Create systemd service
+    step "Creating systemd service"
+    cat <<EOF | sudo tee /etc/systemd/system/rust-mumble.service &>/dev/null
 [Unit]
 Description=Rust-Mumble Voice Server
 After=network.target
@@ -113,48 +188,74 @@ LimitNOFILE=1048576
 [Install]
 WantedBy=multi-user.target
 EOF
-success "Systemd service created"
+    success "Systemd service created"
 
-# Reload systemd
-step "Reloading systemd and enabling Rust-Mumble service"
-sudo systemctl daemon-reload &>/dev/null
-sudo systemctl enable rust-mumble &>/dev/null
-sudo systemctl start rust-mumble &
-spinner
-success "Rust-Mumble service started"
+    # Reload systemd
+    step "Reloading systemd and enabling Rust-Mumble service"
+    sudo systemctl daemon-reload &>/dev/null
+    sudo systemctl enable rust-mumble &>/dev/null
+    sudo systemctl start rust-mumble &
+    spinner
+    success "Rust-Mumble service started"
 
-# Configure file descriptor limits
-step "Configuring file descriptor limits"
-cat <<EOF | sudo tee -a /etc/security/limits.conf &>/dev/null
+    # Configure file descriptor limits
+    step "Configuring file descriptor limits"
+    cat <<EOF | sudo tee -a /etc/security/limits.conf &>/dev/null
 * soft nofile 1048576
 * hard nofile 1048576
 root soft nofile 1048576
 root hard nofile 1048576
 EOF
-success "File descriptor limits set"
+    success "File descriptor limits set"
 
-step "Ensuring PAM applies limits"
-echo "session required pam_limits.so" | sudo tee -a /etc/pam.d/common-session &>/dev/null
-echo "session required pam_limits.so" | sudo tee -a /etc/pam.d/common-session-noninteractive &>/dev/null
-success "PAM limits applied"
+    step "Ensuring PAM applies limits"
+    echo "session required pam_limits.so" | sudo tee -a /etc/pam.d/common-session &>/dev/null
+    echo "session required pam_limits.so" | sudo tee -a /etc/pam.d/common-session-noninteractive &>/dev/null
+    success "PAM limits applied"
 
-step "Setting system-wide limits"
-sudo sed -i 's/^#DefaultLimitNOFILE=.*/DefaultLimitNOFILE=1048576/' /etc/systemd/system.conf &>/dev/null
-sudo sed -i 's/^#DefaultLimitNOFILE=.*/DefaultLimitNOFILE=1048576/' /etc/systemd/user.conf &>/dev/null
-success "System-wide limits configured"
+    step "Setting system-wide limits"
+    sudo sed -i 's/^#DefaultLimitNOFILE=.*/DefaultLimitNOFILE=1048576/' /etc/systemd/system.conf &>/dev/null
+    sudo sed -i 's/^#DefaultLimitNOFILE=.*/DefaultLimitNOFILE=1048576/' /etc/systemd/user.conf &>/dev/null
+    success "System-wide limits configured"
 
-# Configure firewall
-step "Configuring firewall rules"
-sudo ufw allow 55500/tcp &>/dev/null
-sudo ufw allow 55500/udp &>/dev/null
-sudo ufw allow 8080/tcp &>/dev/null
-sudo systemctl enable ufw &>/dev/null
-sudo ufw enable &>/dev/null &
-spinner
-success "Firewall rules applied"
+    # Configure firewall
+    step "Configuring firewall rules"
+    sudo ufw allow 55500/tcp &>/dev/null
+    sudo ufw allow 55500/udp &>/dev/null
+    sudo ufw allow 8080/tcp &>/dev/null
+    sudo systemctl enable ufw &>/dev/null
+    sudo ufw enable &>/dev/null &
+    spinner
+    success "Firewall rules applied"
 
-echo -e "\n${GREEN}${BOLD}All tasks completed successfully! Rust-Mumble is now running.${RESET}"
+    echo -e "\n${GREEN}${BOLD}All tasks completed successfully! Rust-Mumble is now running.${RESET}"
 
-# Display Rust-Mumble Service Status
-step "Checking Rust-Mumble service status"
-sudo systemctl status rust-mumble --no-pager
+    # Display Rust-Mumble Service Status
+    step "Checking Rust-Mumble service status"
+    sudo systemctl status rust-mumble --no-pager
+}
+
+# Main script logic
+main() {
+    local command="${1:-setup}"
+
+    case "$command" in
+        setup)
+            setup_rust_mumble
+            ;;
+        update)
+            update_rust_mumble
+            ;;
+        help)
+            show_usage
+            ;;
+        *)
+            error "Unknown command: $command"
+            show_usage
+            exit 1
+            ;;
+    esac
+}
+
+# Call main function with all arguments
+main "$@"
