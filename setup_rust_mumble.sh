@@ -79,7 +79,10 @@ update_rust_mumble() {
     # Check for updates
     step "Checking for updates"
     LOCAL=$(git rev-parse HEAD)
-    REMOTE=$(git rev-parse origin/main)
+
+    # Determine the default branch (main or master)
+    DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD | sed 's@^refs/remotes/origin/@@')
+    REMOTE=$(git rev-parse origin/$DEFAULT_BRANCH)
 
     if [ "$LOCAL" = "$REMOTE" ]; then
         success "Rust-Mumble is already up to date"
@@ -92,7 +95,7 @@ update_rust_mumble() {
 
     # Pull latest changes
     step "Pulling latest changes"
-    git pull origin main &>/dev/null &
+    git pull origin $DEFAULT_BRANCH &>/dev/null &
     spinner
     success "Latest changes pulled"
 
